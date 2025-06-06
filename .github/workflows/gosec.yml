@@ -14,21 +14,24 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # Checkout PR branch with full history so we can diff
       - name: Checkout PR branch with full history
         uses: actions/checkout@v3
         with:
           fetch-depth: 0
           ref: ${{ github.head_ref }}
 
+      # Fetch main branch for baseline scan and diff
       - name: Fetch main branch
         run: git fetch origin main
 
+      # Set up Go
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.21'
 
-      # --- Baseline Scan on main ---
+      # Run GoSec baseline scan on main
       - name: Checkout main branch for baseline scan
         run: git checkout origin/main
 
@@ -39,22 +42,24 @@ jobs:
 
       - name: Display GoSec on main (baseline) JSON Output
         run: |
-          echo "Displaying raw GoSec results..."
+          echo "Displaying raw GoSec baseline results..."
           cat baseline-results.json | jq '.Issues'
 
-      # --- Restore PR branch ---
+      # Restore PR branch
       - name: Checkout PR branch again
         run: git checkout ${{ github.head_ref }}
 
-      # --- Find changed Go files ---
+      # Find changed Go files
       - name: Get changed Go files
         id: changes
         run: |
           CHANGED=$(git diff --name-only origin/main...HEAD | grep '\.go$' || true)
-          echo "Changed files: $CHANGED"
-          echo "files=$CHANGED" >> $GITHUB_OUTPUT
+          echo "Changed files:"
+          echo "$CHANGED"
+          FILES=$(echo "$CHANGED" | xargs)  # Convert to space-separated string
+          echo "files=$FILES" >> $GITHUB_OUTPUT
 
-      # --- Run GoSec on changed files only ---
+      # Run GoSec on changed files only
       - name: Run GoSec on changed files
         if: steps.changes.outputs.files != ''
         uses: securego/gosec@master
@@ -62,11 +67,12 @@ jobs:
           args: '-no-fail -fmt=json -out changed-results.json ${{ steps.changes.outputs.files }}'
 
       - name: Display GoSec on PR JSON Output
+        if: steps.changes.outputs.files != ''
         run: |
           echo "Displaying raw GoSec results..."
           cat changed-results.json | jq '.Issues'
 
-      # --- Comment on PR with changed files results ---
+      # Comment findings on the PR using GitHub API
       - name: Comment PR with findings (GitHub API)
         if: steps.changes.outputs.files != ''
         env:
@@ -76,7 +82,7 @@ jobs:
           if [ "$COUNT" -eq 0 ]; then
             BODY="✅ No GoSec issues found in changed files."
           else
-            BODY="⚠️ *GoSec found $COUNT high-severity issue(s) in changed files:*\n\n\`\`\`json\n$(jq '.' changed-results.json)\n\`\`\`"
+            BODY="⚠️ *GoSec found $COUNT issue(s) in changed files:*\n\n\`\`\`json\n$(jq '.' changed-results.json)\n\`\`\`"
           fi
 
           PAYLOAD=$(jq -n --arg body "$BODY" '{body: $body}')
