@@ -45,6 +45,7 @@ jobs:
         run: |
           cd baseline
           gosec -no-fail -fmt=json -out ../baseline-results.json ./...
+          cat ../baseline-results.json
 
       # --- Restore PR branch ---
       - name: Checkout PR branch again
@@ -65,6 +66,7 @@ jobs:
           FILES="${{ steps.changes.outputs.files }}"
           echo "Scanning changed files: $FILES"
           gosec -no-fail -fmt=json -out changed-results.json $FILES
+          cat changed-results.json
 
       # --- Comment on PR with changed files results ---
       - name: Comment PR with findings
