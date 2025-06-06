@@ -60,14 +60,13 @@ jobs:
           echo "files=$FILES" >> $GITHUB_OUTPUT
           
       # Run GoSec on changed files only
-      - name: Run GoSec on changed files
+      - name: Run GoSec on changed directories
         if: steps.changes.outputs.files != ''
         run: |
-          echo "Scanning changed files with GoSec..."
-          go install github.com/securego/gosec/v2/cmd/gosec@latest
           FILES="${{ steps.changes.outputs.files }}"
-          echo "Files to scan: $FILES"
-          gosec -no-fail -fmt=json -out changed-results.json $FILES
+          DIRS=$(echo "$FILES" | xargs -n1 dirname | sort -u | xargs)
+          echo "Scanning directories: $DIRS"
+          gosec -no-fail -fmt=json -out changed-results.json $DIRS
           cat changed-results.json
 
       - name: Display GoSec on PR JSON Output
