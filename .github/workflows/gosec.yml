@@ -28,24 +28,14 @@ jobs:
         with:
           go-version: '1.21'
 
-      - name: Install GoSec
-        run: go install github.com/securego/gosec/v2/cmd/gosec@latest
-
-      - name: Install GitHub CLI
-        run: sudo apt-get update && sudo apt-get install -y gh
-
       # --- Baseline Scan on main ---
-      - name: Checkout main branch
-        run: |
-          git checkout origin/main
-          mkdir baseline
-          cp -r * baseline/ || true
+      - name: Checkout main branch for baseline scan
+        run: git checkout origin/main
 
       - name: Run GoSec on main (baseline)
-        run: |
-          cd baseline
-          gosec -no-fail -fmt=json -out ../baseline-results.json ./...
-          cat ../baseline-results.json
+        uses: securego/gosec@v2
+        with:
+          args: '-severity high -no-fail -fmt=json -out baseline-results.json ./...'
 
       # --- Restore PR branch ---
       - name: Checkout PR branch again
@@ -62,23 +52,28 @@ jobs:
       # --- Run GoSec on changed files only ---
       - name: Run GoSec on changed files
         if: steps.changes.outputs.files != ''
-        run: |
-          FILES="${{ steps.changes.outputs.files }}"
-          echo "Scanning changed files: $FILES"
-          gosec -no-fail -fmt=json -out changed-results.json $FILES
-          cat changed-results.json
+        uses: securego/gosec@v2
+        with:
+          args: '-severity high -no-fail -fmt=json -out changed-results.json ${{ steps.changes.outputs.files }}'
 
       # --- Comment on PR with changed files results ---
-      - name: Comment PR with findings
+      - name: Comment PR with findings (GitHub API)
         if: steps.changes.outputs.files != ''
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           COUNT=$(jq '.Issues | length' changed-results.json)
           if [ "$COUNT" -eq 0 ]; then
-            COMMENT="✅ No GoSec issues found in changed files."
+            BODY="✅ No GoSec issues found in changed files."
           else
-            COMMENT="⚠️ *GoSec found $COUNT high-severity issue(s) in changed files:*\n\n\`\`\`json\n$(jq '.' changed-results.json)\n\`\`\`"
+            BODY="⚠️ *GoSec found $COUNT high-severity issue(s) in changed files:*\n\n\`\`\`json\n$(jq '.' changed-results.json)\n\`\`\`"
           fi
-          echo -e "$COMMENT" > comment.txt
-          gh pr comment ${{ github.event.pull_request.number }} --body-file comment.txt
+
+          PAYLOAD=$(jq -n --arg body "$BODY" '{body: $body}')
+
+          curl -sSL \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Content-Type: application/json" \
+            -X POST \
+            "https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
+            -d "$PAYLOAD"
