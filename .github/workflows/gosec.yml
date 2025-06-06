@@ -33,9 +33,14 @@ jobs:
         run: git checkout origin/main
 
       - name: Run GoSec on main (baseline)
-        uses: securego/gosec@v2
+        uses: securego/gosec-action@v2
         with:
-          args: '-severity high -no-fail -fmt=json -out baseline-results.json ./...'
+          args: '-no-fail -fmt=json -out baseline-results.json ./...'
+
+      - name: Display GoSec on main (baseline) JSON Output
+        run: |
+          echo "Displaying raw GoSec results..."
+          cat baseline-results.json | jq '.Issues'
 
       # --- Restore PR branch ---
       - name: Checkout PR branch again
@@ -52,9 +57,14 @@ jobs:
       # --- Run GoSec on changed files only ---
       - name: Run GoSec on changed files
         if: steps.changes.outputs.files != ''
-        uses: securego/gosec@v2
+        uses: securego/gosec-action@v2
         with:
-          args: '-severity high -no-fail -fmt=json -out changed-results.json ${{ steps.changes.outputs.files }}'
+          args: '-no-fail -fmt=json -out changed-results.json ${{ steps.changes.outputs.files }}'
+
+      - name: Display GoSec on PR JSON Output
+        run: |
+          echo "Displaying raw GoSec results..."
+          cat changed-results.json | jq '.Issues'
 
       # --- Comment on PR with changed files results ---
       - name: Comment PR with findings (GitHub API)
