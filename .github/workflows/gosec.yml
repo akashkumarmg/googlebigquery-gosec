@@ -63,6 +63,7 @@ jobs:
       - name: Run GoSec on changed directories
         if: steps.changes.outputs.files != ''
         run: |
+          go install github.com/securego/gosec/v2/cmd/gosec@latest
           FILES="${{ steps.changes.outputs.files }}"
           DIRS=$(echo "$FILES" | xargs -n1 dirname | sort -u | xargs)
           echo "Scanning directories: $DIRS"
