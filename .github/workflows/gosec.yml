@@ -6,77 +6,85 @@ on:
       - main
 
 permissions:
-  pull-requests: write  # Needed to comment on PR
+  pull-requests: write
   contents: read
 
 jobs:
   gosec-scan:
     runs-on: ubuntu-latest
-    steps:
-      - name: Checkout PR branch
-        uses: actions/checkout@v3
 
+    steps:
+      # Checkout PR branch with full history so we can diff
+      - name: Checkout PR branch with full history
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          ref: ${{ github.head_ref }}
+
+      # Fetch main branch for baseline scan and diff
+      - name: Fetch main branch
+        run: git fetch origin main
+
+      # Set up Go
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.21'
 
-      - name: Install GoSec
-        run: go install github.com/securego/gosec/v2/cmd/gosec@latest
+      # Run GoSec baseline scan on main
+      - name: Checkout main branch for baseline scan
+        run: git checkout origin/main
 
-      - name: Fetch base branch for comparison
+      - name: Run GoSec on main (baseline)
+        uses: securego/gosec@master
+        with:
+          args: '-no-fail -fmt=json -out baseline-results.json ./...'
+
+      - name: Display GoSec on main (baseline) JSON Output
         run: |
-          git fetch origin main
-
-      # --- Baseline Scan (Main Branch) ---
-      - name: Checkout main branch
-        run: |
-          git checkout origin/main
-          mkdir baseline
-          cp -r * baseline/ || true
-
-      - name: Run GoSec on Main (Baseline)
-        run: |
-          cd baseline
-          gosec -severity high -no-fail -fmt=json -out ../baseline-results.json ./...
-
-      # --- Restore PR branch for Diff Scan ---
+          echo "Displaying raw GoSec baseline results..."
+          cat baseline-results.json | jq '.Issues'
+      # Restore PR branch
       - name: Checkout PR branch again
-        run: |
-          git checkout -
-        
-      # --- Changed Files Scan ---
+        run: git checkout ${{ github.head_ref }}
+
+      # Find changed Go files
       - name: Get changed Go files
         id: changes
         run: |
           CHANGED=$(git diff --name-only origin/main...HEAD | grep '\.go$' || true)
-          echo "Changed files: $CHANGED"
-          echo "files=$CHANGED" >> $GITHUB_OUTPUT
+          echo "Changed files:"
+          echo "$CHANGED"
+          FILES=$(echo "$CHANGED" | xargs)  # Convert to space-separated string
+          echo "files=$FILES" >> $GITHUB_OUTPUT
+      # Run GoSec on changed files only
+      - name: Run GoSec on changed files
+        if: steps.changes.outputs.files != ''
+        uses: securego/gosec@master
+        with:
+          args: '-no-fail -fmt=json -out changed-results.json ${{ steps.changes.outputs.files }}'
 
-      - name: Run GoSec on changed files only
+      - name: Display GoSec on PR JSON Output
         if: steps.changes.outputs.files != ''
         run: |
-          FILES="${{ steps.changes.outputs.files }}"
-          echo "Scanning changed files: $FILES"
-          gosec -severity high -no-fail -fmt=json -out changed-results.json $FILES
-
-      # --- PR Comment with Changed File Findings ---
-      - name: Comment PR with findings
+          echo "Displaying raw GoSec results..."
+          cat changed-results.json | jq '.Issues'
+      # Comment findings on the PR using GitHub API
+      - name: Comment PR with findings (GitHub API)
         if: steps.changes.outputs.files != ''
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           COUNT=$(jq '.Issues | length' changed-results.json)
           if [ "$COUNT" -eq 0 ]; then
-            echo "No issues found in changed files."
-            COMMENT="✅ No GoSec issues found in changed files."
+            BODY="✅ No GoSec issues found in changed files."
           else
-            echo "Found $COUNT issue(s)."
-            COMMENT="⚠️ *GoSec found $COUNT high-severity issue(s) in changed files:*\n\n\`\`\`json\n$(jq '.' changed-results.json)\n\`\`\`"
+            BODY="⚠️ *GoSec found $COUNT issue(s) in changed files:*\n\n\`\`\`json\n$(jq '.' changed-results.json)\n\`\`\`"
           fi
-          COMMENT_FILE=comment.txt
-          echo -e "$COMMENT" > $COMMENT_FILE
-          gh pr comment ${{ github.event.pull_request.number }} --body-file $COMMENT_FILE
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Install GitHub CLI
-        run: sudo apt-get update && sudo apt-get install -y gh
+          PAYLOAD=$(jq -n --arg body "$BODY" '{body: $body}')
+          curl -sSL \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Content-Type: application/json" \
+            -X POST \
+            "https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
+            -d "$PAYLOAD"
