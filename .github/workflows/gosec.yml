@@ -33,7 +33,7 @@ jobs:
         run: git checkout origin/main
 
       - name: Run GoSec on main (baseline)
-        uses: securego/gosec-action@v2
+        uses: securego/gosec@master
         with:
           args: '-no-fail -fmt=json -out baseline-results.json ./...'
 
@@ -57,7 +57,7 @@ jobs:
       # --- Run GoSec on changed files only ---
       - name: Run GoSec on changed files
         if: steps.changes.outputs.files != ''
-        uses: securego/gosec-action@v2
+        uses: securego/gosec@master
         with:
           args: '-no-fail -fmt=json -out changed-results.json ${{ steps.changes.outputs.files }}'
 
