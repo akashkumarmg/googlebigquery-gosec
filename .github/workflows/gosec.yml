@@ -43,7 +43,8 @@ jobs:
       - name: Display GoSec on main (baseline) JSON Output
         run: |
           echo "Displaying raw GoSec baseline results..."
-          cat baseline-results.json | jq '.Issues'
+          cat baseline-results.json
+          
       # Restore PR branch
       - name: Checkout PR branch again
         run: git checkout ${{ github.head_ref }}
@@ -67,12 +68,14 @@ jobs:
           FILES="${{ steps.changes.outputs.files }}"
           echo "Files to scan: $FILES"
           gosec -no-fail -fmt=json -out changed-results.json $FILES
+          cat changed-results.json
 
       - name: Display GoSec on PR JSON Output
         if: steps.changes.outputs.files != ''
         run: |
           echo "Displaying raw GoSec results..."
-          cat changed-results.json | jq '.Issues'
+          cat changed-results.json
+          
       # Comment findings on the PR using GitHub API
       - name: Comment PR with findings (GitHub API)
         if: steps.changes.outputs.files != ''
