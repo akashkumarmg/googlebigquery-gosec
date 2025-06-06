@@ -36,9 +36,9 @@ jobs:
         run: git checkout origin/main
 
       - name: Run GoSec on main (baseline)
-        uses: securego/gosec@master
-        with:
-          args: '-no-fail -fmt=json -out baseline-results.json ./...'
+        run: |
+          go install github.com/securego/gosec/v2/cmd/gosec@latest
+          gosec -no-fail -fmt=json -out baseline-results.json ./...
 
       - name: Display GoSec on main (baseline) JSON Output
         run: |
