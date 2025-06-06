@@ -57,12 +57,16 @@ jobs:
           echo "$CHANGED"
           FILES=$(echo "$CHANGED" | xargs)  # Convert to space-separated string
           echo "files=$FILES" >> $GITHUB_OUTPUT
+          
       # Run GoSec on changed files only
       - name: Run GoSec on changed files
         if: steps.changes.outputs.files != ''
-        uses: securego/gosec@master
-        with:
-          args: '-no-fail -fmt=json -out changed-results.json ${{ steps.changes.outputs.files }}'
+        run: |
+          echo "Scanning changed files with GoSec..."
+          go install github.com/securego/gosec/v2/cmd/gosec@latest
+          FILES="${{ steps.changes.outputs.files }}"
+          echo "Files to scan: $FILES"
+          gosec -no-fail -fmt=json -out changed-results.json $FILES
 
       - name: Display GoSec on PR JSON Output
         if: steps.changes.outputs.files != ''
