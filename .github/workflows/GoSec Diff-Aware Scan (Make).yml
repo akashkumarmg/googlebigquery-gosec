@@ -10,11 +10,9 @@ permissions:
   contents: read
 
 jobs:
-  gosec-scan-make:
+  gosec-diff-scan:
     runs-on: ubuntu-latest
-
     env:
-      GOPRIVATE: github.com/akashkumarmg
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -35,8 +33,14 @@ jobs:
       - name: Clean Go Module Cache
         run: sudo rm -rf ~/go/pkg/mod || true
 
-      - name: Install dependencies (make)
-        run: make install-dependencies
+      - name: Install dependencies (main, make)
+        run: |
+          if make -qp install-dependencies >/dev/null 2>&1; then
+            echo "✅ Target 'install-dependencies' found. Running it..."
+            make install-dependencies
+          else
+            echo "⚠️ No 'install-dependencies' target found in Makefile. Skipping."
+          fi
 
       - name: Run GoSec on main
         run: |
@@ -66,7 +70,13 @@ jobs:
         run: sudo rm -rf ~/go/pkg/mod || true
 
       - name: Install dependencies (PR, make)
-        run: make install-dependencies
+        run: |
+          if make -qp install-dependencies >/dev/null 2>&1; then
+            echo "✅ Target 'install-dependencies' found. Running it..."
+            make install-dependencies
+          else
+            echo "⚠️ No 'install-dependencies' target found in Makefile. Skipping."
+          fi
 
       - name: Run GoSec on changed PR files
         run: |
@@ -132,7 +142,7 @@ jobs:
           fi
           cat "$COMMENT_FILE"
           curl -s -X POST \
-            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }} \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             -H "Accept: application/vnd.github.v3+json" \
             -d "$(jq -n --rawfile body "$COMMENT_FILE" '{body: $body}')" \
             "https://api.github.com/repos/$REPO/issues/$PR_NUMBER/comments"
