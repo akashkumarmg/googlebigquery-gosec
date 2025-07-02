@@ -35,10 +35,11 @@ jobs:
 
       - name: Install dependencies (main, make)
         run: |
-          if make -n install-dependencies >/dev/null 2>&1; then
+          if make -qp install-dependencies >/dev/null 2>&1; then
+            echo "✅ Target exists: Running install-dependencies"
             make install-dependencies
           else
-            echo "No install-dependencies target found. Skipping."
+            echo "⚠️ No 'install-dependencies' target found in Makefile. Skipping."
           fi
 
       - name: Run GoSec on main
@@ -70,10 +71,11 @@ jobs:
 
       - name: Install dependencies (PR, make)
         run: |
-          if make -n install-dependencies >/dev/null 2>&1; then
+          if make -qp install-dependencies >/dev/null 2>&1; then
+            echo "✅ Target exists: Running install-dependencies"
             make install-dependencies
           else
-            echo "No install-dependencies target found. Skipping."
+            echo "⚠️ No 'install-dependencies' target found in Makefile. Skipping."
           fi
 
       - name: Run GoSec on changed PR files
