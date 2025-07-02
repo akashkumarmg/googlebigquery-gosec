@@ -42,11 +42,20 @@ jobs:
             echo "⚠️ No 'install-dependencies' target found in Makefile. Skipping."
           fi
 
+      - name: Checkout PR branch with full history
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          ref: ${{ github.head_ref }}
+      
+      - name: Checkout main branch for baseline scan
+        run: git checkout origin/main
+      
       - name: Run GoSec on main
         run: |
           go install github.com/securego/gosec/v2/cmd/gosec@latest
-          gosec -fmt=json -out=gosec-main.json ./... || true
-          jq '.Issues // []' gosec-main.json > gosec-main-issues.json
+          gosec -no-fail -fmt=json -out=gosec-main.json ./... || true
+          cat gosec-main.json | jq '.Issues' > gosec-main-issues.json
           cat gosec-main-issues.json
 
       - name: Upload GoSec main results
@@ -60,6 +69,9 @@ jobs:
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Checkout PR branch again
+        run: git checkout ${{ github.head_ref }}
 
       - name: Set up Go (PR)
         uses: actions/setup-go@v5
@@ -82,39 +94,21 @@ jobs:
       - name: Fetch base branch
         run: git fetch origin main
 
-      - name: List changed Go files in PR
+      - name: Get changed Go files
+        id: changes
         run: |
-          git fetch origin main
-          echo "📂 Changed Go files (from origin/main to HEAD):"
-          git diff --name-only origin/main...HEAD | grep '\.go$' || echo "No Go files changed."
-      
-      - name: Run GoSec on changed PR files
+          CHANGED=$(git diff --name-only origin/main...HEAD | grep '\.go$' || true)
+          echo "Changed files:"
+          echo "$CHANGED"
+          FILES=$(echo "$CHANGED" | xargs)  # Convert to space-separated string
+          echo "files=$FILES" >> $GITHUB_OUTPUT
+
+      - name: Run GoSec on main
+        if: steps.changes.outputs.files != ''
         run: |
-          # Install gosec
           go install github.com/securego/gosec/v2/cmd/gosec@latest
-          export PATH=$PATH:$(go env GOPATH)/bin
-          
-          # Get changed .go files in the PR (against origin/main)
-          readarray -t CHANGED_FILES < <(git diff --name-only origin/main...HEAD | grep '\.go$' || true)
-          
-          # Filter to only existing .go files (skip deleted/moved files)
-          FILTERED_FILES=()
-          for file in "${CHANGED_FILES[@]}"; do
-            if [ -f "$file" ]; then
-              FILTERED_FILES+=("$file")
-            fi
-          done
-          
-          # Run gosec if any valid files exist
-          if [ ${#FILTERED_FILES[@]} -eq 0 ]; then
-            echo "No Go files to scan."
-            echo "[]" > gosec-pr-issues.json
-          else
-            gosec -fmt=json -out=gosec-pr.json "${FILTERED_FILES[@]}" || true
-            jq '.Issues // []' gosec-pr.json > gosec-pr-issues.json
-          fi
-          
-          echo "Displaying the PR issues:"
+          gosec -no-fail -fmt=json -out=gosec-pr.json ./... || true
+          cat gosec-pr.json | jq '.Issues' > gosec-pr-issues.json
           cat gosec-pr-issues.json
 
       - name: Download GoSec main issues
