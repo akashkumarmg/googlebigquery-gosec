@@ -81,6 +81,12 @@ jobs:
 
       - name: Fetch base branch
         run: git fetch origin main
+
+      - name: List changed Go files in PR
+        run: |
+          git fetch origin main
+          echo "📂 Changed Go files (from origin/main to HEAD):"
+          git diff --name-only origin/main...HEAD | grep '\.go$' || echo "No Go files changed."
       
       - name: Run GoSec on changed PR files
         run: |
