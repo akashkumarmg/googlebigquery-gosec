@@ -35,9 +35,6 @@ jobs:
       - name: Clean Go Module Cache
         run: sudo rm -rf ~/go/pkg/mod || true
 
-      - name: Install dependencies (make)
-        run: make install-dependencies
-
       - name: Run GoSec on main
         run: |
           go install github.com/securego/gosec/v2/cmd/gosec@latest
