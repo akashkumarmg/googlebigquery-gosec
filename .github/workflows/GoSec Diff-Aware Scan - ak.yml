@@ -1,0 +1,79 @@
+name: GoSec Diff-Aware Scan
+on:
+  pull_request:
+    branches:
+      - main
+permissions:
+  pull-requests: write
+  contents: read
+jobs:
+  gosec-scan:
+    runs-on: ubuntu-latest
+    steps:
+      # Checkout PR branch with full history so we can diff
+      - name: Checkout PR branch with full history
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          ref: ${{ github.head_ref }}
+      # Fetch main branch for baseline scan and diff
+      - name: Fetch main branch
+        run: git fetch origin main
+      # Set up Go
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+      # Run GoSec baseline scan on main
+      - name: Checkout main branch for baseline scan
+        run: git checkout origin/main
+      - name: Run GoSec on main (baseline)
+        uses: securego/gosec@master
+        with:
+          args: '-no-fail -fmt=json -out baseline-results.json ./...'
+      - name: Display GoSec on main (baseline) JSON Output
+        run: |
+          echo "Displaying raw GoSec baseline results..."
+          cat baseline-results.json | jq '.Issues'
+      # Restore PR branch
+      - name: Checkout PR branch again
+        run: git checkout ${{ github.head_ref }}
+      # Find changed Go files
+      - name: Get changed Go files
+        id: changes
+        run: |
+          CHANGED=$(git diff --name-only origin/main...HEAD | grep '\.go$' || true)
+          echo "Changed files:"
+          echo "$CHANGED"
+          FILES=$(echo "$CHANGED" | xargs)  # Convert to space-separated string
+          echo "files=$FILES" >> $GITHUB_OUTPUT
+      # Run GoSec on changed files only
+      - name: Run GoSec on changed files
+        if: steps.changes.outputs.files != ''
+        uses: securego/gosec@master
+        with:
+          args: '-no-fail -fmt=json -out changed-results.json ${{ steps.changes.outputs.files }}'
+      - name: Display GoSec on PR JSON Output
+        if: steps.changes.outputs.files != ''
+        run: |
+          echo "Displaying raw GoSec results..."
+          cat changed-results.json | jq '.Issues'
+      # Comment findings on the PR using GitHub API
+      - name: Comment PR with findings (GitHub API)
+        if: steps.changes.outputs.files != ''
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          COUNT=$(jq '.Issues | length' changed-results.json)
+          if [ "$COUNT" -eq 0 ]; then
+            BODY=":white_check_mark: No GoSec issues found in changed files."
+          else
+            BODY=":warning: *GoSec found $COUNT issue(s) in changed files:*\n\n\`\`\`json\n$(jq '.' changed-results.json)\n\`\`\`"
+          fi
+          PAYLOAD=$(jq -n --arg body "$BODY" '{body: $body}')
+          curl -sSL \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Content-Type: application/json" \
+            -X POST \
+            "https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
+            -d "$PAYLOAD"
