@@ -90,20 +90,31 @@ jobs:
       
       - name: Run GoSec on changed PR files
         run: |
+          # Install gosec
           go install github.com/securego/gosec/v2/cmd/gosec@latest
           export PATH=$PATH:$(go env GOPATH)/bin
-      
+          
+          # Get changed .go files in the PR (against origin/main)
           readarray -t CHANGED_FILES < <(git diff --name-only origin/main...HEAD | grep '\.go$' || true)
-      
-          if [ ${#CHANGED_FILES[@]} -eq 0 ]; then
-            echo "No Go files changed."
+          
+          # Filter to only existing .go files (skip deleted/moved files)
+          FILTERED_FILES=()
+          for file in "${CHANGED_FILES[@]}"; do
+            if [ -f "$file" ]; then
+              FILTERED_FILES+=("$file")
+            fi
+          done
+          
+          # Run gosec if any valid files exist
+          if [ ${#FILTERED_FILES[@]} -eq 0 ]; then
+            echo "No Go files to scan."
             echo "[]" > gosec-pr-issues.json
           else
-            gosec -fmt=json -out=gosec-pr.json "${CHANGED_FILES[@]}" || true
+            gosec -fmt=json -out=gosec-pr.json "${FILTERED_FILES[@]}" || true
             jq '.Issues // []' gosec-pr.json > gosec-pr-issues.json
           fi
-      
-          echo "Displaying the PR issues"
+          
+          echo "Displaying the PR issues:"
           cat gosec-pr-issues.json
 
       - name: Download GoSec main issues
