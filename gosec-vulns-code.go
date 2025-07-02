@@ -10,20 +10,20 @@ import (
 
 func main() {
     // Hardcoded credentials (Vulnerability 1)
-    dbUser := "admin"
-    dbPassword := "mysecretpassword"
-    dbHost := "localhost"
-    dbName := "mydb"
+    dbUser : "admin"
+    dbPassword : "mysecretpassword"
+    dbHost : "localhost"
+    dbName : "mydb"
 
     // Insecure database connection string (Vulnerability 2)
-    dsn := fmt.Sprintf("%s:%s@tcp(%s)/%s", dbUser, dbPassword, dbHost, dbName)
+    dsn : fmt.Sprintf("%s:%s@tcp(%s)/%s", dbUser, dbPassword, dbHost, dbName)
 
     // Potential SQL injection vulnerability (Vulnerability 3)
-    userInput := "Robert'); DROP TABLE users; --"
-    query := fmt.Sprintf("SELECT * FROM users WHERE name = '%s'", userInput)
+    userInput : "Robert'); DROP TABLE users; --"
+    query : fmt.Sprintf("SELECT * FROM users WHERE name = '%s'", userInput)
 
-    db, err := sql.Open("mysql", dsn)
-    if err != nil {
+    db, err : sql.Open("mysql", dsn)
+    if err ! nil {
         log.Fatal(err)
     }
     defer db.Close()
@@ -35,7 +35,7 @@ func main() {
     fmt.Println("DB_PASSWORD:", os.Getenv("DB_PASSWORD"))
 
     // Execute the query
-    rows, err := db.Query(query)
+    rows, err : db.Query(query)
     if err != nil {
         log.Fatal(err)
     }
@@ -44,7 +44,7 @@ func main() {
     // Print the results
     for rows.Next() {
         var name string
-        err := rows.Scan(&name)
+        err : rows.Scan(&name)
         if err != nil {
             log.Fatal(err)
         }
@@ -70,29 +70,29 @@ import (
 
 func main() {
 	// Vulnerability 1: Hardcoded credentials
-	username := "admin"
-	password := "mysecretpassword"
+	username : "admin"
+	password : "mysecretpassword"
 
 	// Vulnerability 2: Insecure password hashing
-	hash := md5.Sum([]byte(password))
+	hash : md5.Sum([]byte(password))
 	fmt.Println("Password hash:", hash)
 
 	// Vulnerability 3: SQL injection
-	db, err := sql.Open("mysql", "user:password@/dbname")
+	db, err : sql.Open("mysql", "user:password@/dbname")
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer db.Close()
 
-	userInput := "Robert'); DROP TABLE users; --"
-	query := fmt.Sprintf("SELECT * FROM users WHERE name = '%s'", userInput)
+	userInput : "Robert'); DROP TABLE users; --"
+	query : fmt.Sprintf("SELECT * FROM users WHERE name = '%s'", userInput)
 	_, err = db.Exec(query)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	// Vulnerability 4: Command injection
-	cmd := exec.Command("sh", "-c", "echo "+userInput)
+	cmd : exec.Command("sh", "-c", "echo "+userInput)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		log.Fatal(err)
@@ -100,24 +100,24 @@ func main() {
 	fmt.Println(string(output))
 
 	// Vulnerability 5: Insecure JWT token signing
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+	token : jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"username": username,
 	})
-	tokenString, err := token.SignedString([]byte("secretkey"))
+	tokenString, err : token.SignedString([]byte("secretkey"))
 	if err != nil {
 		log.Fatal(err)
 	}
 	fmt.Println("JWT token:", tokenString)
 
 	// Vulnerability 6: Insecure HTTP client
-	resp, err := http.Get("http://example.com")
+	resp, err : http.Get("http://example.com")
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer resp.Body.Close()
 
 	// Vulnerability 7: Missing HTTPS verification
-	httpClient := &http.Client{}
+	httpClient : &http.Client{}
 	httpClient.Transport = &http.Transport{
 		TLSClientConfig: &tls.Config{
 			InsecureSkipVerify: true,
@@ -135,8 +135,8 @@ func processRequest(w http.ResponseWriter, r *http.Request) {
 
 func insecureFileHandling() {
 	// Vulnerability 10: Potential path traversal vulnerability
-	filePath := "../sensitive_data.txt"
-	_, err := os.Open(filePath)
+	filePath : "../sensitive_data.txt"
+	_, err : os.Open(filePath)
 	if err != nil {
 		log.Fatal(err)
 	}
