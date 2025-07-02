@@ -47,6 +47,7 @@ jobs:
           go install github.com/securego/gosec/v2/cmd/gosec@latest
           gosec -fmt=json -out=gosec-main.json ./... || true
           jq '.Issues // []' gosec-main.json > gosec-main-issues.json
+          cat gosec-main-issues.json
 
       - name: Upload GoSec main results
         uses: actions/upload-artifact@v4
@@ -89,6 +90,7 @@ jobs:
             gosec -fmt=json -out=gosec-pr.json $CHANGED_FILES || true
             jq '.Issues // []' gosec-pr.json > gosec-pr-issues.json
           fi
+          cat gosec-pr-issues.json
 
       - name: Download GoSec main issues
         uses: actions/download-artifact@v4
