@@ -1,4 +1,4 @@
-name: GoSec Diff-Aware Scan
+name: GoSec Scan
 
 on:
   pull_request:
