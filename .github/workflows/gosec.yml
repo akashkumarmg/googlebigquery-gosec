@@ -64,7 +64,7 @@ jobs:
       - name: Display GoSec on main (baseline) JSON Output
         run: |
           echo "Displaying raw GoSec baseline results..."
-          cat baseline-results.json 
+          cat baseline-results.json | jq '.Issues'
           
       # Restore PR branch
       - name: Checkout PR branch again
