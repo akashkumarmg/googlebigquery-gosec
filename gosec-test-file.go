@@ -2,80 +2,54 @@ package main
 
 import (
 	"crypto/md5"
-	"database/sql"
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
+	"io"
 	"log"
-	"math/rand"
 	"net/http"
-	"os"
 	"os/exec"
-	"time"
-
-	_ "github.com/go-sql-driver/mysql"
+	"strings"
 )
 
 func main() {
-	// Hardcoded credentials
-	dbUser := "root"
-	dbPass := "password123"
-	dsn := fmt.Sprintf("%s:%s@tcp(localhost:3306)/testdb", dbUser, dbPass)
+	// Critical severity vulnerability: Use of weak MD5 hash
+	hash := md5.Sum([]byte("password123"))
+	fmt.Printf("MD5 Hash: %x\n", hash)
 
-	db, err := sql.Open("mysql", dsn)
+	// Critical severity vulnerability: Use of insecure random number generator
+	buf := make([]byte, 16)
+	rand.Read(buf)
+	fmt.Printf("Random bytes: %x\n", buf)
+
+	// Critical severity vulnerability: Use of insecure deserialization
+	jsonStr := `{"name":"John","admin":true}`
+	var data map[string]interface{}
+	if err := json.Unmarshal([]byte(jsonStr), &data); err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("Deserialized data: %+v\n", data)
+
+	// Critical severity vulnerability: Command injection
+	cmd := fmt.Sprintf("ping -c 1 %s", "example.com")
+	output, err := exec.Command("bash", "-c", cmd).Output()
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer db.Close()
+	fmt.Printf("Command output: %s\n", output)
 
-	http.HandleFunc("/run", func(w http.ResponseWriter, r *http.Request) {
-		// Command injection via unsanitized input
-		cmd := exec.Command("sh", "-c", r.URL.Query().Get("cmd"))
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			http.Error(w, err.Error(), 500)
-			return
-		}
-		w.Write(out)
+	// Critical severity vulnerability: Insecure use of net/http
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("Hello, World!"))
 	})
+	log.Fatal(http.ListenAndServe(":8080", nil))
 
-	http.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
-		username := r.FormValue("username")
-		password := r.FormValue("password")
+	// Critical severity vulnerability: Use of insecure base64 encoding
+	encodedStr := base64.StdEncoding.EncodeToString([]byte("secret data"))
+	fmt.Printf("Base64 encoded string: %s\n", encodedStr)
 
-		// SQL Injection vulnerability
-		query := "SELECT * FROM users WHERE username = '" + username + "' AND password = '" + password + "'"
-		rows, err := db.Query(query)
-		if err != nil {
-			http.Error(w, "DB error", 500)
-			return
-		}
-		defer rows.Close()
-
-		if rows.Next() {
-			fmt.Fprintf(w, "Welcome %s!", username)
-		} else {
-			http.Error(w, "Unauthorized", 401)
-		}
-	})
-
-	http.HandleFunc("/hash", func(w http.ResponseWriter, r *http.Request) {
-		// Weak hashing algorithm
-		data := r.URL.Query().Get("data")
-		hash := md5.Sum([]byte(data))
-		fmt.Fprintf(w, "%x", hash)
-	})
-
-	// Insecure random number generation
-	rand.Seed(time.Now().UnixNano())
-	token := rand.Intn(1000000)
-	fmt.Println("Generated token:", token)
-
-	// Insecure file creation with broad permissions
-	err = os.WriteFile("/tmp/insecure_file.txt", []byte("secret data"), 0777)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// Insecure HTTP server (no TLS)
-	http.ListenAndServe(":8080", nil)
+	// Critical severity vulnerability: Use of insecure string concatenation
+	userInput := "example.com"
+	url := "http://" + userInput + "/api/data"
+	fmt.Printf("Concatenated URL: %s\n", url)
 }
-/##
