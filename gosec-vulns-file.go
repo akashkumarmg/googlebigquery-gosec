@@ -2,54 +2,83 @@ package main
 
 import (
 	"crypto/md5"
+	"crypto/sha1"
+	"crypto/tls"
 	"crypto/rand"
-	"encoding/base64"
+	"database/sql"
 	"fmt"
-	"io"
+	"io/ioutil"
 	"log"
+	"math/rand"
 	"net/http"
+	"os"
 	"os/exec"
-	"strings"
+	"time"
+
+	_ "github.com/lib/pq"
 )
 
 func main() {
-	// Critical severity vulnerability: Use of weak MD5 hash
-	hash := md5.Sum([]byte("password123"))
-	fmt.Printf("MD5 Hash: %x\n", hash)
+	// 1. Hardcoded credentials [G101]
+	password := "supersecret123"
 
-	// Critical severity vulnerability: Use of insecure random number generator
-	buf := make([]byte, 16)
-	rand.Read(buf)
-	fmt.Printf("Random bytes: %x\n", buf)
+	// 2. Command injection [G204]
+	userInput := "ls -la"
+	cmd := exec.Command("sh", "-c", userInput)
+	output, _ := cmd.Output()
+	fmt.Println(string(output))
 
-	// Critical severity vulnerability: Use of insecure deserialization
-	jsonStr := `{"name":"John","admin":true}`
-	var data map[string]interface{}
-	if err := json.Unmarshal([]byte(jsonStr), &data); err != nil {
-		log.Fatal(err)
-	}
-	fmt.Printf("Deserialized data: %+v\n", data)
-
-	// Critical severity vulnerability: Command injection
-	cmd := fmt.Sprintf("ping -c 1 %s", "example.com")
-	output, err := exec.Command("bash", "-c", cmd).Output()
+	// 3. SQL Injection [G201]
+	db, err := sql.Open("postgres", "user=foo dbname=bar sslmode=disable")
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Printf("Command output: %s\n", output)
+	defer db.Close()
+	name := "'; DROP TABLE users; --"
+	query := fmt.Sprintf("SELECT * FROM users WHERE name='%s'", name)
+	rows, _ := db.Query(query)
+	defer rows.Close()
 
-	// Critical severity vulnerability: Insecure use of net/http
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("Hello, World!"))
-	})
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	// 4. Insecure TLS settings [G402]
+	_ = &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+	}
 
-	// Critical severity vulnerability: Use of insecure base64 encoding
-	encodedStr := base64.StdEncoding.EncodeToString([]byte("secret data"))
-	fmt.Printf("Base64 encoded string: %s\n", encodedStr)
+	// 5. Predictable random number generator [G404]
+	fmt.Println("Random:", rand.Intn(100))
 
-	// Critical severity vulnerability: Use of insecure string concatenation
-	userInput := "example.com"
-	url := "http://" + userInput + "/api/data"
-	fmt.Printf("Concatenated URL: %s\n", url)
+	// 6. Insecure temporary file [G304]
+	tmpfile, err := ioutil.TempFile("", "example")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer os.Remove(tmpfile.Name())
+
+	// 7. Insecure file permissions [G302]
+	err = ioutil.WriteFile("secrets.txt", []byte("top-secret"), 0644)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// 8. Use of MD5 [G401]
+	h := md5.New()
+	h.Write([]byte("test"))
+	fmt.Printf("MD5: %x\n", h.Sum(nil))
+
+	// 9. Use of SHA1 [G401]
+	h2 := sha1.New()
+	h2.Write([]byte("test"))
+	fmt.Printf("SHA1: %x\n", h2.Sum(nil))
+
+	// 10. Insecure HTTP request [G107]
+	resp, err := http.Get("http://example.com")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	// 11. Ignoring errors [G103]
+	ioutil.WriteFile("ignored_error.txt", []byte("some data"), 0644)
 }
