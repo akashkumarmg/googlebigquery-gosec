@@ -10,10 +10,31 @@ permissions:
   contents: read
 
 jobs:
-  gosec-scan:
+  gosec-diff-scan:
     runs-on: ubuntu-latest
-
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    
     steps:
+      # Set up Go
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          
+      - name: Clean Go Module Cache
+        run: sudo rm -rf ~/go/pkg/mod || true
+
+      - name: Install dependencies (main, make)
+        run: |
+          if make -qp install-dependencies >/dev/null 2>&1; then
+            echo "✅ Target 'install-dependencies' found. Running it..."
+            make install-dependencies
+          else
+            echo "⚠️ No 'install-dependencies' target found in Makefile. Skipping."
+          fi
+          
       # Checkout PR branch with full history so we can diff
       - name: Checkout PR branch with full history
         uses: actions/checkout@v3
