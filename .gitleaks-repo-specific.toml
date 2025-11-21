@@ -1,0 +1,9 @@
+[extend]
+# This path must match where you copied the central config in the step above
+path = "./Rules/gitleaks.toml"
+
+[allowlist]
+description = "Repo specific ignores"
+paths = [
+    '''/dont_scan/'''
+]
