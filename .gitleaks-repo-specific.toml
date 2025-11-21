@@ -6,4 +6,6 @@ path = "./Rules/gitleaks.toml"
 description = "Repo specific ignores"
 paths = [
       '''/test/'''
+      '''/python-script-for-gitleaks.py'''
+      '''/dont_scan/'''
 ]
