@@ -1,0 +1,171 @@
+name: Gitleaks secrets scan
+
+on:
+  pull_request:
+    - main
+
+permissions:
+  issues: write
+  pull-requests: write
+  contents: read
+
+jobs:
+  gitleaks:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Required to get full commit history for diffing
+
+      - name: Download gitleaks.toml config file
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p Rules
+          content=$(gh api -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            /repos/akashkumarmg/git-central/contents/Rules/gitleaks.toml --jq '.content')
+          echo "$content" | base64 -d > Rules/gitleaks.toml
+          
+      - name: Get base and head commit SHAs
+        run: |
+          echo "BASE_SHA=${{ github.event.pull_request.base.sha }}" >> $GITHUB_ENV
+          echo "HEAD_SHA=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
+
+      # --- NEW STEP: Determine which config to use ---
+      - name: Determine Gitleaks Configuration
+        run: |
+          # Logic: Check for Repo-Specific Config vs Fallback to Master
+          # We check "Rules/..." because actions/checkout puts files in current dir
+          if [ -f "Rules/.gitleaks-repo-specific.toml" ]; then
+            echo "✅ Repo-specific config found (Extend mode active)."
+            # Point Gitleaks to the repo's custom config file (Path inside Docker)
+            echo "GITLEAKS_CONFIG_PATH=/repo/Rules/.gitleaks-repo-specific.toml" >> $GITHUB_ENV
+          else
+            echo "⚠️ No repo-specific config found. Falling back to Master Config."
+            # Point Gitleaks directly to the central config (Path inside Docker)
+            echo "GITLEAKS_CONFIG_PATH=/repo/Rules/gitleaks.toml" >> $GITHUB_ENV
+          fi
+
+      # --- NEW STEP: Echo Excluded Paths (using yq) ---
+      - name: Echo Excluded Paths in the repo-specific config
+        run: |
+          # We check the file on the runner filesystem
+          CONFIG_FILE="Rules/.gitleaks-repo-specific.toml"
+          
+          if [ -f "$CONFIG_FILE" ]; then
+            echo "🔍 Found repo-specific config. Checking for excluded paths..."
+            
+            # EXPLANATION 
+            # 1. .allowlist.paths[]?        -> Get global paths (ignore error if missing)
+            # 2. .rules[].allowlist.paths[]? -> Get rule-specific paths (ignore error if missing)
+            # 3. The comma (,) joins them into one list
+            # Note: portable yq is installed on ubuntu-latest by default
+            PATHS=$(yq -p toml -oy '.allowlist.paths[]?, .rules[].allowlist.paths[]?' "$CONFIG_FILE")
+            
+            if [ -z "$PATHS" ]; then
+              echo "✅ No paths are excluded in the repo-specific config."
+            else
+              echo "⚠️ The following paths are explicitly excluded from scanning:"
+              echo "---------------------------------------------------"
+              echo "$PATHS" | sort | uniq  # Clean up duplicates
+              echo "---------------------------------------------------"
+            fi
+          else
+            echo "ℹ️ No repo-specific config found. Using Master rules only."
+          fi
+
+      - name: Run Gitleaks on PR changes via Docker
+        run: |
+          # Uses the GITLEAKS_CONFIG_PATH env var set in previous steps
+          docker run --rm -v $(pwd):/repo -w /repo zricethezav/gitleaks:latest detect \
+            --source="/repo" \
+            --config="$GITLEAKS_CONFIG_PATH" \
+            --log-opts="--no-merges $BASE_SHA..$HEAD_SHA" \
+            --verbose \
+            --exit-code=0 \
+            --report-format=json \
+            --report-path="/repo/gitleaks-report.json" \
+            --redact
+
+      - name: Upload Gitleaks report
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitleaks-report
+          path: gitleaks-report.json
+
+      - name: Format and comment findings on PR
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ ! -f gitleaks-report.json ]; then
+            echo "Report file not found!"
+            exit 1
+          fi
+
+          FINDINGS_JSON=$(cat gitleaks-report.json)
+          COUNT=$(echo "$FINDINGS_JSON" | jq 'length')
+          SHA="${{ github.event.pull_request.head.sha }}"
+          REPO="${{ github.repository }}"
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          MAX=10
+
+          if [ "$COUNT" -gt 0 ]; then
+            COMMENT="**🔐 Gitleaks Findings: $COUNT issue(s) detected**\n\n"
+            i=0
+            while [ "$i" -lt "$COUNT" ] && [ "$i" -lt "$MAX" ]; do
+              ITEM=$(echo "$FINDINGS_JSON" | jq ".[$i]")
+              RULE=$(echo "$ITEM" | jq -r '.RuleID')
+              DESC=$(echo "$ITEM" | jq -r '.Description')
+              FILE=$(echo "$ITEM" | jq -r '.File')
+              LINE=$(echo "$ITEM" | jq -r '.StartLine // "unknown"')
+              LINK="https://github.com/$REPO/blob/$SHA/$FILE#L$LINE"
+              SECRET_MASKED="**********"
+              COMMENT+="🔸 **Rule**: \`$RULE\`\n"
+              COMMENT+="📄 **File**: \`$FILE:$LINE\`\n"
+              COMMENT+="📝 **Description**: $DESC\n"
+              COMMENT+="🔑 **Secret**: \`$SECRET_MASKED\`\n"
+              COMMENT+="🔗 **Path**: [$FILE:$LINE]($LINK)\n\n"
+              i=$((i + 1))
+            done
+
+            if [ "$COUNT" -gt "$MAX" ]; then
+              COMMENT+="...and more. Only showing first $MAX findings.\n"
+            fi
+          else
+            COMMENT="✅ **Gitleaks Findings:** No secrets detected. Safe to proceed!"
+          fi
+
+          # Add unique identifier to comment for easy identification
+          COMMENT+="\n\n"
+          
+          # Escape newlines for GitHub API
+          COMMENT=$(echo "$COMMENT" | sed ':a;N;$!ba;s/\n/\\n/g')
+
+          # Check if a comment from this bot already exists
+          EXISTING_COMMENT_ID=$(curl -s \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/${REPO}/issues/${PR_NUMBER}/comments" | \
+            jq -r '.[] | select(.body | contains("")) | .id' | head -n 1)
+
+          if [ -n "$EXISTING_COMMENT_ID" ] && [ "$EXISTING_COMMENT_ID" != "null" ]; then
+            # Update existing comment
+            echo "Updating existing Gitleaks comment with ID: $EXISTING_COMMENT_ID"
+            curl -s -X PATCH \
+              -H "Authorization: token $GITHUB_TOKEN" \
+              -H "Accept: application/vnd.github.v3+json" \
+              -d "{\"body\":\"$COMMENT\"}" \
+              "https://api.github.com/repos/${REPO}/issues/comments/${EXISTING_COMMENT_ID}"
+          else
+            # Create new comment
+            echo "Creating new Gitleaks comment"
+            curl -X POST \
+              -H "Authorization: token $GITHUB_TOKEN" \
+              -H "Accept: application/vnd.github.v3+json" \
+              -d "{\"body\":\"$COMMENT\"}" \
+              "https://api.github.com/repos/${REPO}/issues/${PR_NUMBER}/comments"
+          fi
+```
