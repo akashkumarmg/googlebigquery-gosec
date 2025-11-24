@@ -168,4 +168,3 @@ jobs:
               -d "{\"body\":\"$COMMENT\"}" \
               "https://api.github.com/repos/${REPO}/issues/${PR_NUMBER}/comments"
           fi
-```
