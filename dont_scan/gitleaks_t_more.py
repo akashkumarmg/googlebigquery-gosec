@@ -25,6 +25,11 @@ DOCKER_HUB_TOKEN = "dhp_FAKE1234567890abcdef1234567890abcd"
 # 8. New Base64-like API private secret
 SERVICE_PRIVATE_SECRET = "MIIEvgIBADANBgkqhkiG9FAKEBASE64SECRET12345678"
 
+key = "-----BEGIN RSA PRIVATE KEY-----
+MIIBOgIBAAJBAFAKEKEYTEST1234567890abcdefghijklmnopqrstuvxyzABCDE
+FAKEKEY1234567890abcdefghijklmnopqrstuvxyzABCDEFAKEKEY1234567890
+-----END RSA PRIVATE KEY-----"
+
 def main():
     print("Loaded another fresh set of fake secrets.")
 
