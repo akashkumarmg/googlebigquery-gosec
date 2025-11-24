@@ -27,7 +27,7 @@ jobs:
           mkdir -p Rules
           content=$(gh api -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
-            /repos/akashkumarmg/git-central/contents/Rules/gitleaks.toml --jq '.content')
+            /repos/akashkumarmg/googlebigquery-gosec/contents/Rules/gitleaks.toml --jq '.content')
           echo "$content" | base64 -d > Rules/gitleaks.toml
           
       - name: Get base and head commit SHAs
