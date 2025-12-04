@@ -1,8 +1,11 @@
 # gitleaks_test_sample.py
 # Contains intentionally fake secrets for testing Gitleaks detection.
 # These are NOT real credentials.
+#test_line_1
 
 import os
+import pandas
+import requests
 
 # 1. New fake GitHub PAT (different pattern from previous)
 GITHUB_TOKEN = "ghu_9xK2lP0Q2FAKEFAKEFAKEFAKE123456"
