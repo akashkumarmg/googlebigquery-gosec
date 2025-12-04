@@ -1,0 +1,222 @@
+name: Gitleaks Secret Scan
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * *"   # daily at 03:00 UTC
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  gitleaks:
+    runs-on: ubuntu-latest
+
+    steps:
+      # -----------------------------
+      # 1️⃣ Checkout repository fully
+      # -----------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # ensures all files and history
+
+      # -----------------------------
+      # 2️⃣ Debug: list repo files
+      # -----------------------------
+      - name: List repo contents
+        run: |
+          echo "Scanning repository directory: $(pwd)"
+          ls -R
+          echo "Check that your test secret files exist here"
+
+      # -----------------------------
+      # 3️⃣ Install Gitleaks
+      # -----------------------------
+      - name: Install Gitleaks v8.30.0
+        run: |
+          wget https://github.com/gitleaks/gitleaks/releases/download/v8.30.0/gitleaks_8.30.0_linux_x64.tar.gz
+          mkdir /tmp/gitleaks
+          tar -xzf gitleaks_8.30.0_linux_x64.tar.gz -C /tmp/gitleaks
+          sudo mv /tmp/gitleaks/gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+
+      # -----------------------------
+      # 4️⃣ Ensure baseline exists
+      # -----------------------------
+      - name: Ensure baseline
+        run: |
+          if [ ! -f .gitleaks-baseline.json ]; then
+            echo "[]" > .gitleaks-baseline.json
+          fi
+
+      # -----------------------------
+      # 5️⃣ Run Gitleaks scan
+      # -----------------------------
+      - name: Run Gitleaks scan
+        run: |
+          echo "Scanning repository directory: $(pwd)"
+          gitleaks detect \
+            --source . \
+            --baseline-path .gitleaks-baseline.json \
+            --redact \
+            --report-format json \
+            --report-path gitleaks-report.json \
+            --exit-code 0
+
+      # -----------------------------
+      # 6️⃣ Compare with baseline
+      # -----------------------------
+      - name: Compare findings with baseline
+        id: compare
+        run: |
+          echo "Comparing new scan with baseline..."
+          jq -r '.[].Fingerprint' .gitleaks-baseline.json | sort > baseline_fp.txt
+          jq -r '.[].Fingerprint' gitleaks-report.json | sort > new_fp.txt
+
+          comm -13 baseline_fp.txt new_fp.txt > new_only_fp.txt
+          NEW_COUNT=$(wc -l < new_only_fp.txt | tr -d ' ')
+          echo "New leaks found: $NEW_COUNT"
+          echo "new_count=$NEW_COUNT" >> $GITHUB_OUTPUT
+
+          if [ "$NEW_COUNT" -gt 0 ]; then
+            FINGERPRINTS=$(jq -R -s -c 'split("\n")[:-1]' new_only_fp.txt)
+            jq --argjson fps "$FINGERPRINTS" 'map(select(.Fingerprint as $fp | $fps | index($fp)))' gitleaks-report.json > new-findings.json
+          else
+            echo "[]" > new-findings.json
+          fi
+
+      # -----------------------------
+      # 7️⃣ Create or update GitHub issue (with debug)
+      # -----------------------------
+      - name: Create or update issue
+        if: steps.compare.outputs.new_count != '0'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require("fs");
+            const findings = JSON.parse(fs.readFileSync("new-findings.json", "utf8"));
+            const sample = findings.slice(0,5);
+
+            const bodyLines = [
+              "## ⚠️ New Secrets Detected",
+              "",
+              `A total of **${findings.length} new secrets** were detected by Gitleaks.`,
+              "",
+              "### 🔍 Sample (first 5)",
+            ];
+
+            sample.forEach(f => {
+              bodyLines.push(`- **${f.RuleID}** in \`${f.File}:${f.StartLine}\``);
+            });
+
+            bodyLines.push("");
+            bodyLines.push("Full findings CSV attached below.");
+            const body = bodyLines.join("\n");
+
+            // Debug: log all open issues
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: "open",
+              per_page: 100
+            });
+
+            console.log("Open issues:", issues.map(i => i.title));
+
+            // Match existing issue by exact title
+            let issue = issues.find(i => i.title.trim() === "New Secrets Detected by Gitleaks");
+
+            if (issue) {
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body,
+              });
+              console.log(`Updated existing issue #${issue.number}`);
+            } else {
+              issue = await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: "New Secrets Detected by Gitleaks",
+                body,
+                labels: ["security"],
+              });
+              console.log(`Created new issue #${issue.data.number}`);
+            }
+
+      # -----------------------------
+      # 8️⃣ Convert new findings to CSV and attach to issue
+      # -----------------------------
+      - name: Attach CSV to issue
+        if: steps.compare.outputs.new_count != '0'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require("fs");
+
+            const findings = JSON.parse(fs.readFileSync("new-findings.json", "utf8"));
+            if (findings.length === 0) return;
+
+            // Convert to CSV
+            const headers = ["RuleID","File","Line","Secret","Link","Fingerprint"];
+            const csvLines = [headers.join(",")];
+
+            findings.forEach(f => {
+              const line = [
+                f.RuleID,
+                f.File,
+                f.StartLine,
+                f.Secret ? f.Secret.toString() : "",
+                f.Link ? f.Link : "",
+                f.Fingerprint
+              ];
+              csvLines.push(line.map(v => `"${v}"`).join(","));
+            });
+
+            const csvContent = csvLines.join("\n");
+
+            // Find the issue
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: "open",
+              per_page: 100
+            });
+
+            let issue = issues.find(i => i.title.trim() === "New Secrets Detected by Gitleaks");
+
+            if (issue) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: `📄 **Full Findings CSV:**\n\n\`\`\`csv\n${csvContent}\n\`\`\``
+              });
+              console.log(`Attached CSV to issue #${issue.number}`);
+            } else {
+              console.log("Issue not found, cannot attach CSV");
+            }
+
+      # -----------------------------
+      # 9️⃣ Update baseline
+      # -----------------------------
+      - name: Update baseline
+        if: steps.compare.outputs.new_count != '0'
+        run: |
+          cp gitleaks-report.json .gitleaks-baseline.json
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add .gitleaks-baseline.json
+          git commit -m "Update Gitleaks baseline after new findings" || echo "No changes to commit"
+          git push || echo "Push failed"
