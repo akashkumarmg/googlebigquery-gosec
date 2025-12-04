@@ -7,6 +7,8 @@ import os
 import pandas
 import requests
 
+SLACK_WEBHOOK="https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX"
+
 # 1. New fake GitHub PAT (different pattern from previous)
 GITHUB_TOKEN = "ghu_9xK2lP0Q2FAKEFAKEFAKEFAKE123456"
 
