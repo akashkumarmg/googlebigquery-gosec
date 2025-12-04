@@ -56,6 +56,8 @@ jobs:
           if [ ! -f .gitleaks-baseline.json ]; then
             echo "[]" > .gitleaks-baseline.json
           fi
+          echo "echoing the .gitleaks-baseline.json"
+          cat .gitleaks-baseline.json
 
       # -----------------------------
       # 5️⃣ Run Gitleaks scan
@@ -70,6 +72,8 @@ jobs:
             --report-format json \
             --report-path gitleaks-report.json \
             --exit-code 0
+            echo "echoing the baseline-path .gitleaks-baseline.json"
+            echo "echoing the report-path gitleaks-report.json"
 
       # -----------------------------
       # 6️⃣ Compare with baseline
@@ -82,6 +86,9 @@ jobs:
           jq -r '.[].Fingerprint' gitleaks-report.json | sort > new_fp.txt
 
           comm -13 baseline_fp.txt new_fp.txt > new_only_fp.txt
+          echo "echoing the new_only_fp.txt"
+          cat new_only_fp.txt
+          
           NEW_COUNT=$(wc -l < new_only_fp.txt | tr -d ' ')
           echo "New leaks found: $NEW_COUNT"
           echo "new_count=$NEW_COUNT" >> $GITHUB_OUTPUT
