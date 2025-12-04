@@ -73,7 +73,9 @@ jobs:
             --report-path gitleaks-report.json \
             --exit-code 0
             echo "echoing the baseline-path .gitleaks-baseline.json"
+            cat .gitleaks-baseline.json
             echo "echoing the report-path gitleaks-report.json"
+            cat gitleaks-report.json
 
       # -----------------------------
       # 6️⃣ Compare with baseline
