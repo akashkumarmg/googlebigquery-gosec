@@ -1,12 +1,9 @@
 name: Gitleaks Secret Scan - vijay - original
-
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   pull_request:
-    branches:
-      - main
+    branches: [main]
   workflow_dispatch:
   schedule:
     - cron: "0 3 * * *"   # daily at 03:00 UTC
@@ -21,21 +18,20 @@ jobs:
 
     steps:
       # -----------------------------
-      # 1️⃣ Checkout repository fully
+      # 1️⃣ Checkout Repo
       # -----------------------------
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0   # ensures all files and history
+          fetch-depth: 0
 
       # -----------------------------
-      # 2️⃣ Debug: list repo files
+      # 2️⃣ Debug Repo Contents
       # -----------------------------
       - name: List repo contents
         run: |
           echo "Scanning repository directory: $(pwd)"
           ls -R
-          echo "Check that your test secret files exist here"
 
       # -----------------------------
       # 3️⃣ Install Gitleaks
@@ -51,18 +47,17 @@ jobs:
       # -----------------------------
       # 4️⃣ Ensure baseline exists
       # -----------------------------
-      - name: Ensure baseline
+      - name: Ensure baseline exists
         run: |
           if [ ! -f .gitleaks-baseline.json ]; then
             echo "[]" > .gitleaks-baseline.json
           fi
 
       # -----------------------------
-      # 5️⃣ Run Gitleaks scan
+      # 5️⃣ Run Gitleaks Scan
       # -----------------------------
       - name: Run Gitleaks scan
         run: |
-          echo "Scanning repository directory: $(pwd)"
           gitleaks detect \
             --source . \
             --baseline-path .gitleaks-baseline.json \
@@ -72,29 +67,32 @@ jobs:
             --exit-code 0
 
       # -----------------------------
-      # 6️⃣ Compare with baseline
+      # 6️⃣ Compare Findings
       # -----------------------------
       - name: Compare findings with baseline
         id: compare
         run: |
-          echo "Comparing new scan with baseline..."
-          jq -r '.[].Fingerprint' .gitleaks-baseline.json | sort > baseline_fp.txt
-          jq -r '.[].Fingerprint' gitleaks-report.json | sort > new_fp.txt
+          echo "Comparing findings…"
 
-          comm -13 baseline_fp.txt new_fp.txt > new_only_fp.txt
+          jq -r '.[].Fingerprint' .gitleaks-baseline.json | sort > baseline_fp.txt
+          jq -r '.[].Fingerprint' gitleaks-report.json | sort > report_fp.txt
+
+          comm -13 baseline_fp.txt report_fp.txt > new_only_fp.txt
           NEW_COUNT=$(wc -l < new_only_fp.txt | tr -d ' ')
           echo "New leaks found: $NEW_COUNT"
           echo "new_count=$NEW_COUNT" >> $GITHUB_OUTPUT
 
           if [ "$NEW_COUNT" -gt 0 ]; then
             FINGERPRINTS=$(jq -R -s -c 'split("\n")[:-1]' new_only_fp.txt)
-            jq --argjson fps "$FINGERPRINTS" 'map(select(.Fingerprint as $fp | $fps | index($fp)))' gitleaks-report.json > new-findings.json
+            jq --argjson fps "$FINGERPRINTS" \
+               'map(select(.Fingerprint as $fp | $fps | index($fp)))' \
+               gitleaks-report.json > new-findings.json
           else
             echo "[]" > new-findings.json
           fi
 
       # -----------------------------
-      # 7️⃣ Create or update GitHub issue (with debug)
+      # 7️⃣ Create/Update Issue
       # -----------------------------
       - name: Create or update issue
         if: steps.compare.outputs.new_count != '0'
@@ -103,26 +101,20 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const fs = require("fs");
-            const findings = JSON.parse(fs.readFileSync("new-findings.json", "utf8"));
-            const sample = findings.slice(0,5);
+            const findings = JSON.parse(fs.readFileSync("new-findings.json","utf8"));
+            const sample = findings.slice(0, 5);
 
-            const bodyLines = [
+            const body = [
               "## ⚠️ New Secrets Detected",
               "",
               `A total of **${findings.length} new secrets** were detected by Gitleaks.`,
               "",
               "### 🔍 Sample (first 5)",
-            ];
+              ...sample.map(f => `- **${f.RuleID}** in \`${f.File}:${f.StartLine}\``),
+              "",
+              "Full findings CSV is attached below."
+            ].join("\n");
 
-            sample.forEach(f => {
-              bodyLines.push(`- **${f.RuleID}** in \`${f.File}:${f.StartLine}\``);
-            });
-
-            bodyLines.push("");
-            bodyLines.push("Full findings CSV attached below.");
-            const body = bodyLines.join("\n");
-
-            // Debug: log all open issues
             const { data: issues } = await github.rest.issues.listForRepo({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -130,32 +122,29 @@ jobs:
               per_page: 100
             });
 
-            console.log("Open issues:", issues.map(i => i.title));
-
-            // Match existing issue by exact title
-            let issue = issues.find(i => i.title.trim() === "New Secrets Detected by Gitleaks");
+            let issue = issues.find(i => i.title === "New Secrets Detected by Gitleaks");
 
             if (issue) {
               await github.rest.issues.update({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: issue.number,
-                body,
+                body
               });
-              console.log(`Updated existing issue #${issue.number}`);
+              console.log(`Updated issue #${issue.number}`);
             } else {
               issue = await github.rest.issues.create({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 title: "New Secrets Detected by Gitleaks",
                 body,
-                labels: ["security"],
+                labels: ["security"]
               });
-              console.log(`Created new issue #${issue.data.number}`);
+              console.log(`Created issue #${issue.data.number}`);
             }
 
       # -----------------------------
-      # 8️⃣ Convert new findings to CSV and attach to issue
+      # 8️⃣ Attach CSV to issue
       # -----------------------------
       - name: Attach CSV to issue
         if: steps.compare.outputs.new_count != '0'
@@ -164,59 +153,55 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const fs = require("fs");
-
             const findings = JSON.parse(fs.readFileSync("new-findings.json", "utf8"));
-            if (findings.length === 0) return;
 
-            // Convert to CSV
             const headers = ["RuleID","File","Line","Secret","Link","Fingerprint"];
-            const csvLines = [headers.join(",")];
+            const csv = [
+              headers.join(","),
+              ...findings.map(f =>
+                [
+                  f.RuleID,
+                  f.File,
+                  f.StartLine,
+                  f.Secret || "",
+                  f.Link || "",
+                  f.Fingerprint
+                ].map(v => `"${v}"`).join(",")
+              )
+            ].join("\n");
 
-            findings.forEach(f => {
-              const line = [
-                f.RuleID,
-                f.File,
-                f.StartLine,
-                f.Secret ? f.Secret.toString() : "",
-                f.Link ? f.Link : "",
-                f.Fingerprint
-              ];
-              csvLines.push(line.map(v => `"${v}"`).join(","));
-            });
-
-            const csvContent = csvLines.join("\n");
-
-            // Find the issue
             const { data: issues } = await github.rest.issues.listForRepo({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              state: "open",
-              per_page: 100
+              state: "open"
             });
 
-            let issue = issues.find(i => i.title.trim() === "New Secrets Detected by Gitleaks");
+            const issue = issues.find(i => i.title === "New Secrets Detected by Gitleaks");
+            if (!issue) return;
 
-            if (issue) {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: issue.number,
-                body: `📄 **Full Findings CSV:**\n\n\`\`\`csv\n${csvContent}\n\`\`\``
-              });
-              console.log(`Attached CSV to issue #${issue.number}`);
-            } else {
-              console.log("Issue not found, cannot attach CSV");
-            }
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              body: `📄 **CSV of new findings:**\n\n\`\`\`csv\n${csv}\n\`\`\``
+            });
 
       # -----------------------------
-      # 9️⃣ Update baseline
+      # 9️⃣ Update baseline (Option B)
       # -----------------------------
       - name: Update baseline
-        if: steps.compare.outputs.new_count != '0'
         run: |
-          cp gitleaks-report.json .gitleaks-baseline.json
-          git config user.name "github-actions"
-          git config user.email "actions@github.com"
-          git add .gitleaks-baseline.json
-          git commit -m "Update Gitleaks baseline after new findings" || echo "No changes to commit"
-          git push || echo "Push failed"
+          REPORT_SIZE=$(jq length gitleaks-report.json)
+          echo "Report size: $REPORT_SIZE"
+
+          if [ "$REPORT_SIZE" -gt 0 ]; then
+            echo "Updating baseline with full report..."
+            cp gitleaks-report.json .gitleaks-baseline.json
+            git config user.name "github-actions"
+            git config user.email "actions@github.com"
+            git add .gitleaks-baseline.json
+            git commit -m "Update Gitleaks baseline (full report)" || echo "No changes"
+            git push || echo "Push failed"
+          else
+            echo "No secrets in report. Baseline will NOT be updated."
+          fi
