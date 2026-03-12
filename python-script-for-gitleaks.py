@@ -28,7 +28,7 @@ TWILIO_AUTH_TOKEN = "4f9a8d3e1b2c0fae1234567890abcdef"
 
 # 7. New fake RSA Private Key (shortened but detectable)
 RSA_PRIVATE_KEY = """
------BEGIN RSA PRIVATE KEY-----
+-----BEGIN RSA PRIVATE KEY-----                            # gitleaks:allow
 MIICXAIBAAKBgQCFAKEKEY1234567890ABCDEFGHIJKLMN
 OPQRSTUVWXYZ0123456789FAKEKEYabcdefghijklmno
 -----END RSA PRIVATE KEY-----
